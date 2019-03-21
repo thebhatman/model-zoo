@@ -15,19 +15,19 @@ Conv_Gate_Forward(in_channels, out_channels, kernel_size, pad, stride) = Chain(C
 
 #Gate(x, in_channels, out_channels, kernel_size, pad, stride) = sigmoid.(Conv_Gate_Forward(in_channels, out_channels, (kernel_size, kernel_size), (pad, pad), (stride, stride))(x) + Conv_Gate_Rec(in_channels, out_channels, (kernel_size, kernel_size), (pad, pad), (stride, stride))(x))
 
-#Gate_Mul(x, in_channels, out_channels, kernel_size, pad, stride) = (Conv_Rec(in_channels, out_channels, (kernel_size, kernel_size), (pad,pad), (stride,stride))(x)) .* Gate(x, in_channels, out_channels, kernel_size, pad, stride)
+# Gate_Mul(x, in_channels, out_channels, kernel_size, pad, stride) = (Conv_Rec(in_channels, out_channels, (kernel_size, kernel_size), (pad,pad), (stride,stride))(x)) .* Gate(x, in_channels, out_channels, kernel_size, pad, stride)
 
-forward1 = LSTM(512, 256)
-backward1 = LSTM(512, 256)
-output1 = Dense(512, 256)
+forward1 = LSTM(4608, 512)
+backward1 = LSTM(4608, 256)
+output1 = Dense(768, 256)
 
-BLSTM1(x) = output1.(vcat.(forward1.(x), Flux.flip(backward1, x)))
+BLSTM1(x) = output1(vcat(forward1(x), Base.reverse(backward1(Base.reverse(x; dims = 1)); dims = 1)))
 
 forward2 = LSTM(256, 256)
 backward2 = LSTM(256, 256)
 output2 = Dense(512, 10)
 
-BLSTM2(x) = output2.(vcat.(forward2.(x), flip(backward2, x)))
+BLSTM2(x) = output2(vcat(forward2(x), Base.reverse(backward2(Base.reverse(x; dims = 1)); dims = 1)))
 
 function GRCL(x, in_channels, out_channels, kernel_size, pad, stride, n_iter)
 	conv_forw = Conv_Forward(in_channels, out_channels, (kernel_size, kernel_size), (pad,pad), (stride,stride))(x)
@@ -54,11 +54,11 @@ function GRCNN()
 		x -> maxpool(x, (2, 2), pad = (0, 1), stride = (2, 1)),
 		Conv((2,2), 256 => 512, relu, pad = (0,0), stride = (1,1)),
 		BatchNorm(512),
-		x -> reshape(x, :, size(x, 4)),
+		x -> reshape(x, (:,size(x, 4))),
 		x -> BLSTM1(x),
 		x -> BLSTM2(x)
 		)
 end
 
 x = rand(32, 32, 1, 100)
-GRCNN()(x)
+println(size(GRCNN()(x)))
