@@ -10,10 +10,7 @@ function transformer(input_feature, theta, out_dims)
 
 	out_height = out_dims[1]
 	out_width = out_dims[2]
-	batch_grids = affine_grid_generator(out_height, out_width, theta)
-	x_s = batch_grids[:, :, 1, :]
-	y_s = batch_grids[:, :, 2, :]
-
+	x_s, y_s = affine_grid_generator(out_height, out_width, theta)
 	
 end
 
@@ -42,9 +39,9 @@ function affine_grid_generator(height, width, theta)
 	sampling_grid = Array(reshape(transpose(repeat(transpose(sampling_grid), batch_size)), 3, size(x_t_flat)[2], batch_size))
 
 	batch_grids = batched_gemm('N', 'N', theta, sampling_grid)
-	batch_grids = reshape(batch_grids,2, height, width, batch_size)
-	batch_grids = permutedims(batch_grids,[3, 2, 1, 4])
-	return batch_grids
+	y_s = permutedims(reshape(batch_grids[2, :, :], width, height, batch_size), [2,1,3])
+	x_s = permutedims(reshape(batch_grids[1, :, :], width, height, batch_size), [2,1,3])
+	return x_s, y_s
 end
 
 function bilinear_sampler(img, x, y)
@@ -75,7 +72,10 @@ end
 
 theta = Matrix{Float64}(I, 2, 3)
 theta = Array(reshape(transpose(repeat(transpose(theta), 10)), 2, 3, 10))
-println(affine_grid_generator(32, 32, theta)[:,:,1, 1])
+println("Verifying : ")
+println(affine_grid_generator(32, 16, theta)[1])
+println("-----------------------------------------------")
+println(affine_grid_generator(32, 16, theta)[2])
 
 
 
