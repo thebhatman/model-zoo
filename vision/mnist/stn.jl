@@ -1,4 +1,4 @@
-using Flux
+using Flux, Flux.Data.MNIST
 using BatchedRoutines
 using LinearAlgebra
 
@@ -84,3 +84,10 @@ println("Verifying : ")
 println(affine_grid_generator(32, 16, theta)[1])
 println("-----------------------------------------------")
 println(affine_grid_generator(32, 16, theta)[2])
+
+#Predicts the 6 parameters of transformation matrix for each image in the batch.
+localization_net = Chain(MaxPool((2, 2)), Conv((5, 5), 1 => 20, stride = (1, 1), pad = (0, 0)),
+					MaxPool((2, 2)), Conv((5, 5), 20 => 20, stride = (1, 1), pad = (0, 0)),
+					x -> reshape(x, :, size(x, 4)),
+					Dense(1620, 50), x -> relu.(x),
+					Dense(50, 6))
