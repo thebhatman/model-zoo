@@ -36,12 +36,14 @@ function get_pixel_values(img, x, y)
 	width = size(img, 1)
 	height = size(img, 2)
 	channels = size(img, 3)
+	#println(y)
 	x_indices = trunc.(Int, Array(selectdim(x, 1, 1)))
 	y_indices = trunc.(Int, Array(selectdim(y, 2, 1)))
 	batch = []
-	println(size(img))
+	#println(size(img))
+	println(batch_size)
 	for i in 1:batch_size
-		push!(batch, img[x_indices[:, i], y_indices[:, i],:, i])
+		push!(batch, img[y_indices[:, i], x_indices[:, i], :, i])
 	end
 	batch = reshape(hcat(batch...),width, height, channels, batch_size)
 	return batch
@@ -51,6 +53,8 @@ end
 function bilinear_sampler(img, x, y)
 	height = size(img)[1]
 	width = size(img)[2]
+	channels = size(img)[3]
+	batch_size = size(img)[4]
 	max_y = height
 	max_x = width
 	x = 0.5*(x .+ 1.0)*(max_x)
@@ -74,12 +78,26 @@ function bilinear_sampler(img, x, y)
 	valB = get_pixel_values(img, x0, y1)
 	valC = get_pixel_values(img, x1, y0)
 	valD = get_pixel_values(img, x1, y1)
+	weight1 = []
+	weight2 = []
+	weight3 = []
+	weight4 = []
+	for i in 1:channels
+		push!(weight1, w1)
+		push!(weight2, w2)
+		push!(weight3, w3)
+		push!(weight4, w4)
+	end
+	weight1 = permutedims(reshape(hcat(weight1...), height, width, batch_size, channels), [1, 2, 4, 3])
+	weight2 = permutedims(reshape(hcat(weight2...), height, width, batch_size, channels), [1, 2, 4, 3])
+	weight3 = permutedims(reshape(hcat(weight3...), height, width, batch_size, channels), [1, 2, 4, 3])
+	weight4 = permutedims(reshape(hcat(weight4...), height, width, batch_size, channels), [1, 2, 4, 3])
 
-
+	return weight1 .* valA + weight2 .* valB + weight3 .* valC + weight4 .* valD
 end
 
 theta = Matrix{Float64}(I, 2, 3)
-theta = Array(reshape(transpose(repeat(transpose(theta), 10)), 2, 3, 10))
+theta = Array(reshape(transpose(repeat(transpose(theta), 1)), 2, 3, 1))
 println("Verifying : ")
 println(affine_grid_generator(32, 16, theta)[1])
 println("-----------------------------------------------")
