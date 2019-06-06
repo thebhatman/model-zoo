@@ -1,18 +1,21 @@
-using Flux, Flux.Data.MNIST
-using BatchedRoutines
+using Images
+using ImageView
+using Flux#, Flux.Data.MNIST
+using Flux: onehotbatch, onecold
 using LinearAlgebra
+using Base.Iterators: partition
+using BatchedRoutines
 
-function transformer(input_feature, theta, out_dims)
-	batch_size = size(input_feature)[4]
-	height = size(input_feature)[1]
-	width = size(input_feature)[2]
-	channels = size(input_feature)[3]
+BATCH_SIZE = 128
+# imgs = MNIST.images()
+# labels = MNIST.labels()
+#
+# data = [reshape(hcat(Array(channelview.(imgs))...), 28, 28, 1,:) for imgs in partition(imgs, BATCH_SIZE)]
+# data = gpu.(data)
 
-	out_height = out_dims[1]
-	out_width = out_dims[2]
-	x_s, y_s = affine_grid_generator(out_height, out_width, theta)
-
-end
+NUM_EPOCHS = 50
+training_steps = 0
+num_classes = 10
 
 function affine_grid_generator(height, width, theta)
 	batch_size = size(theta)[3]
@@ -26,9 +29,8 @@ function affine_grid_generator(height, width, theta)
 	sampling_grid = Array(reshape(transpose(repeat(transpose(sampling_grid), batch_size)), 3, size(x_t_flat)[2], batch_size))
 
 	batch_grids = batched_gemm('N', 'N', theta, sampling_grid)
-
-	y_s = permutedims(reshape(batch_grids[2, :, :], width, height, batch_size), [2,1,3])
-	x_s = permutedims(reshape(batch_grids[1, :, :], width, height, batch_size), [2,1,3])
+	y_s = reshape(batch_grids[2, :, :], width, height, batch_size)
+	x_s = reshape(batch_grids[1, :, :], width, height, batch_size)
 	return x_s, y_s
 end
 
@@ -37,29 +39,26 @@ function get_pixel_values(img, x, y)
 	width = size(img, 1)
 	height = size(img, 2)
 	channels = size(img, 3)
-	#println(y)
 
-	x_indices = trunc.(Int, Array(selectdim(x, 1, 1)))
-	y_indices = trunc.(Int, Array(selectdim(y, 2, 1)))
-
-	println("*************************************")
-	println((x_indices[:, 1]))
-	println("//////////////////////////////////////")
-	println((y_indices[:, 1]))
+	x = trunc.(Int, x)
+	y = trunc.(Int, y)
 
 	batch = []
 	#println(size(img))
 	println(batch_size)
 	for i in 1:batch_size
-		#push!(batch, img[y_indices[:, i], x_indices[:, i], :, i])
 		pic = colorview(RGB, reshape(img[:, :, :, i], channels, width, height))
-		new_pic = pic[y_indices[:, i], x_indices[:]]
+		new_pic = pic
+		for j in 1:height
+			for k in 1:width
+				new_pic[j, k] = pic[y[k, j, i], x[k, j, i]]
+			end
+		end
 		push!(batch, reshape(Float64.(channelview(new_pic)), width, height, channels))
 	end
 	batch = reshape(cat(batch..., dims = 4),width, height, channels, batch_size)
 	return batch
 end
-
 
 function bilinear_sampler(img, x, y)
 	height = size(img)[1]
@@ -68,6 +67,7 @@ function bilinear_sampler(img, x, y)
 	batch_size = size(img)[4]
 	max_y = height
 	max_x = width
+
 	x = 0.5*(x .+ 1.0)*(max_x)
 	y = 0.5*(y .+ 1.0)*(max_y)
 
@@ -90,14 +90,14 @@ function bilinear_sampler(img, x, y)
 	valC = get_pixel_values(img, x1, y0)
 	valD = get_pixel_values(img, x1, y1)
 
-	new_img = colorview(RGB, reshape(valA[:, :, :, 1], 3, 64, 64))
-	imshow(new_img)
-	new_img = colorview(RGB, reshape(valB[:, :, :, 1], 3, 64, 64))
-	imshow(new_img)
-	new_img = colorview(RGB, reshape(valC[:, :, :, 1], 3, 64, 64))
-	imshow(new_img)
-	new_img = colorview(RGB, reshape(valD[:, :, :, 1], 3, 64, 64))
-	imshow(new_img)
+	# new_img = colorview(RGB, reshape(valA[:, :, :, 1], 3, 64, 64))
+	# imshow(new_img)
+	# new_img = colorview(RGB, reshape(valB[:, :, :, 1], 3, 64, 64))
+	# imshow(new_img)
+	# new_img = colorview(RGB, reshape(valC[:, :, :, 1], 3, 64, 64))
+	# imshow(new_img)
+	# new_img = colorview(RGB, reshape(valD[:, :, :, 1], 3, 64, 64))
+	# imshow(new_img)
 
 	weight1 = []
 	weight2 = []
@@ -116,24 +116,46 @@ function bilinear_sampler(img, x, y)
 	weight4 = permutedims(reshape(cat(weight4..., dims = 4), height, width, batch_size, channels), [1, 2, 4, 3])
 
 	resultant = weight1 .* valA + weight2 .* valB + weight3 .* valC + weight4 .* valD
-	return resultant
+	return valD
 end
 
-theta = Matrix{Float64}(I, 2, 3)
-#theta[2, 3] = 0.5
-# theta[1, 1] = cos(pi/6)
-# theta[1, 2] = -sin(pi/6)
-# theta[2, 1] = sin(pi/6)
-# theta[2, 2] = cos(pi/6)
-theta = Array(reshape(transpose(repeat(transpose(theta), 1)), 2, 3, 1))
-# println("Verifying : ")
-# println(affine_grid_generator(32, 16, theta)[1])
-# println("-----------------------------------------------")
-# println(affine_grid_generator(32, 16, theta)[2])
-
-#Predicts the 6 parameters of transformation matrix for each image in the batch.
 localization_net = Chain(MaxPool((2, 2)), Conv((5, 5), 1 => 20, stride = (1, 1), pad = (0, 0)),
 					MaxPool((2, 2)), Conv((5, 5), 20 => 20, stride = (1, 1), pad = (0, 0)),
 					x -> reshape(x, :, size(x, 4)),
 					Dense(1620, 50), x -> relu.(x),
-					Dense(50, 6))
+					Dense(50, 4))
+
+function transformer(input_batch, loc_net_output)
+	width = size(input_batch)[1]
+	height = size(input_batch)[2]
+	channels = size(input_batch)[3]
+	batch_size = size(input_batch)[4]
+	scale_factor = loc_net_output[1, :]
+	trans_width = loc_net_output[2, :]
+	trans_height = loc_net_output[3, :]
+	angle = loc_net_output[4, :]
+	theta = Matrix{Float64}(I, 2, 3)
+	theta = Array(reshape(transpose(repeat(transpose(theta), batch_size)), 2, 3, batch_size))
+	for i in 1:batch_size
+		theta[:, :, i] = scale_factor[i]*theta[:, :, i]
+		theta[1, 3, i] = trans_width[i]
+		theta[2, 3, i] = trans_height[i]
+	end
+	out = bilinear_sampler(input_batch, affine_grid_generator(height, width, theta)...)
+	output_batch = []
+	for i in 1:batch_size
+		pic = colorview(RGB, reshape(out[:, :, :, i], channels, width, height))
+		rotated_pic = imrotate(pic, angle[i], axes(pic))
+		push!(output_batch, reshape(Float64.(channelview(rotated_pic)), width, height, channels))
+	end
+	output_batch = reshape(cat(output_batch..., dims = 4), width, height, channels, batch_size)
+	return output_batch
+end
+
+model = Chain(Conv((3, 3), 3 => 32, relu ), MaxPool((2, 2)),
+			Conv((3, 3), 32 => 32, relu), MaxPool((2, 2)),
+			x -> reshape(x, :, size(x, 4)),
+			Dense(704, 256),
+			x -> relu.(x),
+			Dense(256, num_classes),
+			softmax)
